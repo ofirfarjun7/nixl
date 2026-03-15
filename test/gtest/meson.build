@@ -14,8 +14,7 @@
 # limitations under the License.
 
 gtest_dep = dependency('gtest', version : '>=1.11.0', required : false)
-absl_strings_dep = abseil_proj.get_variable('absl_strings_dep')
-absl_time_dep = abseil_proj.get_variable('absl_time_dep')
+# absl_strings_dep and absl_time_dep are resolved in the root meson.build
 
 if not gtest_dep.found()
     message('GTest not found, skipping gtest build')

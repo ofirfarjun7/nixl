@@ -113,7 +113,23 @@ if get_option('buildtype') == 'release'
   abseil_flags = cpp.get_supported_arguments('-Wno-error=maybe-uninitialized', '-Wno-maybe-uninitialized')
   add_global_arguments(abseil_flags, language: 'cpp')
 endif
-abseil_proj = subproject('abseil-cpp')
+# Try system-installed Abseil first to avoid ODR violations from version mismatch
+_absl_system = dependency('absl_base', required: false)
+if _absl_system.found()
+    message('Using system-installed Abseil')
+    absl_log_dep             = dependency('absl_log',             required: true)
+    absl_strings_dep         = dependency('absl_strings',         required: true)
+    absl_status_dep          = dependency('absl_status',          required: true)
+    absl_synchronization_dep = dependency('absl_synchronization', required: true)
+    absl_time_dep            = dependency('absl_time',            required: true)
+else
+    abseil_proj              = subproject('abseil-cpp')
+    absl_log_dep             = abseil_proj.get_variable('absl_log_dep')
+    absl_strings_dep         = abseil_proj.get_variable('absl_strings_dep')
+    absl_status_dep          = abseil_proj.get_variable('absl_status_dep')
+    absl_synchronization_dep = abseil_proj.get_variable('absl_synchronization_dep')
+    absl_time_dep            = abseil_proj.get_variable('absl_time_dep')
+endif
 taskflow_proj = dependency('taskflow', fallback: ['taskflow', 'taskflow_dep'])
 
 cuda_inc_path = get_option('cudapath_inc')

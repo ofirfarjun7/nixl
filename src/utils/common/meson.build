@@ -13,11 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Get required Abseil dependencies from the subproject
-absl_log_dep = abseil_proj.get_variable('absl_log_dep')
-absl_strings_dep = abseil_proj.get_variable('absl_strings_dep')
-absl_status_dep = abseil_proj.get_variable('absl_status_dep')
-absl_synchronization_dep = abseil_proj.get_variable('absl_synchronization_dep')
+# Abseil deps are resolved in the root meson.build (system or subproject fallback)
 
 nixl_common_inc = include_directories('.')
 
