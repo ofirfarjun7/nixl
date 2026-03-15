@@ -22,6 +22,13 @@ nixl_common_deps = [
     absl_strings_dep,
     absl_status_dep,
     absl_synchronization_dep,
+    absl_raw_hash_set_dep,
+    absl_hashtablez_sampler_dep,
+    absl_hash_dep,
+    absl_base_dep,
+    absl_log_initialize_dep,
+    absl_status_dep,
+    absl_statusor_dep,
     dependency('asio', required: true),
 ]
 
