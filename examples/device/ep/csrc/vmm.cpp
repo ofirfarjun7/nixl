@@ -134,7 +134,7 @@ vmm_region::vmm_region(size_t size) {
         }
     };
 
-    static cuda_alloc_ctx ctx();
+    static cuda_alloc_ctx ctx{};
 
     if (!ctx.fabric_supported) {
         size_ = size;
@@ -144,8 +144,6 @@ vmm_region::vmm_region(size_t size) {
         }
         return;
     }
-
-    CUmemAccessDesc access_desc = {};
 
     size_ = nixl_ep::align_up<size_t>(size, ctx.granularity);
 
@@ -164,10 +162,7 @@ vmm_region::vmm_region(size_t size) {
     }
     vmm_mapped_ = true;
 
-    access_desc.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
-    access_desc.location.id = device;
-    access_desc.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
-    if (cuMemSetAccess(ptr_, size_, &access_desc, 1) != CUDA_SUCCESS) {
+    if (cuMemSetAccess(ptr_, size_, &ctx.access_desc, 1) != CUDA_SUCCESS) {
         release();
         throw std::runtime_error("Failed to set CUDA memory access");
     }
