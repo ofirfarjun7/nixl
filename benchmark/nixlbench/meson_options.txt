@@ -18,7 +18,6 @@ option('cudapath_lib', type: 'string', value: '', description: 'Library path for
 option('cudapath_stub', type: 'string', value: '', description: 'Extra Stub path for CUDA')
 option('etcd_inc_path', type: 'string', value: '', description: 'Path to ETCD C++ Client includes')
 option('etcd_lib_path', type: 'string', value: '', description: 'Path to ETCD C++ Client library')
-option('etcd_prefix', type: 'string', value: '', description: 'Install prefix for etcd-cpp-api C++ client (adds lib*/pkgconfig to pkg-config search; not the etcd server binary)')
 option('nixl_path', type: 'string', value: '/usr/local', description: 'Path to NiXL')
 option('nvshmem_inc_path', type: 'string', value: '', description: 'Path to NVSHMEM include directory')
 option('nvshmem_lib_path', type: 'string', value: '', description: 'Path to NVSHMEM library directory')
