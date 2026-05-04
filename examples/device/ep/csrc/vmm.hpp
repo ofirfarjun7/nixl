@@ -42,6 +42,9 @@ public:
     }
 
 private:
+    bool
+    vmmFabricAllocation(cuda_alloc_ctx &ctx, size_t size);
+
     void
     release() noexcept;
 
