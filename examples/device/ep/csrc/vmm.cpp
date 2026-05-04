@@ -153,7 +153,7 @@ void
 vmm_region::release() noexcept {
     if (is_cuda_malloc_) {
         if (ptr_) {
-            warn_cu_api(cuMemFree(ptr_), k_vmm_ctx, "cuMemFree");
+            log_cu_api(cuMemFree(ptr_), cu_api_log_level::warning, k_vmm_ctx, "cuMemFree");
         }
         ptr_ = 0;
         return;
