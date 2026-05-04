@@ -164,7 +164,8 @@ vmm_region::release() noexcept {
         vmm_mapped_ = false;
     }
     if (ptr_) {
-        warn_cu_api(cuMemAddressFree(ptr_, size_), k_vmm_ctx, "cuMemAddressFree");
+        log_cu_api(cuMemAddressFree(ptr_, size_), cu_api_log_level::warning, k_vmm_ctx,
+                   "cuMemAddressFree");
         ptr_ = 0;
     }
     if (handle_) {
@@ -189,7 +190,6 @@ vmm_region::vmm_region(size_t size) {
         std::cerr << "INFO: " << k_vmm_ctx
                       << " - CUDA VMM fabric allocation failed; falling back to "
                          "cuMemAlloc\n";
-        ctx.fabric_supported = false;
     }
 
     size_ = size;

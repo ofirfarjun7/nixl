@@ -23,6 +23,8 @@
 
 namespace nixl_ep {
 
+struct cuda_alloc_ctx;
+
 class vmm_region {
 public:
     explicit vmm_region(size_t size);
