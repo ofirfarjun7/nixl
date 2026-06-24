@@ -236,11 +236,7 @@ if cuda_dep.found()
 
     cuda_arch_list = get_option('nixl_cuda_arch_list').strip()
     if cuda_arch_list == 'auto'
-        if get_option('build_nixl_ep')
-            cuda_arch_list = '90,100,103,120'
-        else
-            cuda_arch_list = '80,86,89,90,100,103,120'
-        endif
+        cuda_arch_list = '80,86,89,90,100,103,120'
     endif
 
     nvcc_flags = []

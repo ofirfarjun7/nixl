@@ -26,51 +26,34 @@
 #include "exception.cuh"
 
 #ifndef SETUP_LAUNCH_CONFIG
-#ifndef DISABLE_SM90_FEATURES
 #define SETUP_LAUNCH_CONFIG(num_sms, num_threads, stream) \
     cudaLaunchConfig_t cfg = {(num_sms), (num_threads), 0, stream, nullptr, 0}; \
     cudaLaunchAttribute attr[2]; \
+    int __nixl_ep_device = 0; \
+    cudaDeviceProp __nixl_ep_device_prop = {}; \
+    CUDA_CHECK(cudaGetDevice(&__nixl_ep_device)); \
+    CUDA_CHECK(cudaGetDeviceProperties(&__nixl_ep_device_prop, __nixl_ep_device)); \
     attr[0].id = cudaLaunchAttributeCooperative; \
     attr[0].val.cooperative = 1; \
-    attr[1].id = cudaLaunchAttributeClusterDimension; \
-    attr[1].val.clusterDim.x = (num_sms % 2 == 0 ? 2 : 1); \
-    attr[1].val.clusterDim.y = 1; \
-    attr[1].val.clusterDim.z = 1; \
     cfg.attrs = attr; \
-    cfg.numAttrs = 2
-#else
-#define SETUP_LAUNCH_CONFIG(sms, threads, stream) \
-    int __num_sms = (sms); \
-    int __num_threads = (threads); \
-    auto __stream = (stream)
-#endif
+    cfg.numAttrs = 1; \
+    if (__nixl_ep_device_prop.major >= 9) { \
+        attr[1].id = cudaLaunchAttributeClusterDimension; \
+        attr[1].val.clusterDim.x = ((num_sms) % 2 == 0 ? 2 : 1); \
+        attr[1].val.clusterDim.y = 1; \
+        attr[1].val.clusterDim.z = 1; \
+        cfg.numAttrs = 2; \
+    }
 #endif
 
 #ifndef LAUNCH_KERNEL
-#ifndef DISABLE_SM90_FEATURES
 #define LAUNCH_KERNEL(config, kernel, ...) CUDA_CHECK(cudaLaunchKernelEx(config, kernel, ##__VA_ARGS__))
-#else
-#define LAUNCH_KERNEL(config, kernel, ...) \
-do { \
-    kernel<<<__num_sms, __num_threads, 0, __stream>>>(__VA_ARGS__); \
-    cudaError_t e = cudaGetLastError(); \
-    if (e != cudaSuccess) { \
-        EPException cuda_exception("CUDA", __FILE__, __LINE__, cudaGetErrorString(e)); \
-        fprintf(stderr, "%s\n", cuda_exception.what()); \
-        throw cuda_exception; \
-    } \
-} while (0)
-#endif
 #endif
 
 #ifndef SET_SHARED_MEMORY_FOR_TMA
-#ifndef DISABLE_SM90_FEATURES
 #define SET_SHARED_MEMORY_FOR_TMA(kernel) \
 EP_HOST_ASSERT(cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_size) == cudaSuccess); \
 cfg.dynamicSmemBytes = smem_size;
-#else
-#define SET_SHARED_MEMORY_FOR_TMA(kernel) void()
-#endif
 #endif
 
 #define SWITCH_NVL_RANKS(case_macro)                           \

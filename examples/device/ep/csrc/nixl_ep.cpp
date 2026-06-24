@@ -1263,7 +1263,7 @@ Buffer::get_next_combine_buffer(int num_max_dispatch_tokens_per_rank, int hidden
 }
 
 bool is_sm90_compiled() {
-#ifndef DISABLE_SM90_FEATURES
+#if NIXL_EP_HAS_SM90_TARGET
     return true;
 #else
     return false;

@@ -101,6 +101,17 @@ nixl_ep_cuda_args = [
     '-Xcompiler', '-Wno-attributes',
 ]
 
+nixl_ep_has_sm90_target = false
+foreach cuda_sm_arch : selected_cuda_archs
+    cuda_sm_arch_num = cuda_sm_arch.replace('sm_', '').to_int()
+    if cuda_sm_arch_num >= 90
+        nixl_ep_has_sm90_target = true
+    endif
+endforeach
+
+nixl_ep_cpp_args += ['-DNIXL_EP_HAS_SM90_TARGET=' + (nixl_ep_has_sm90_target ? '1' : '0')]
+nixl_ep_cuda_args += ['-DNIXL_EP_HAS_SM90_TARGET=' + (nixl_ep_has_sm90_target ? '1' : '0')]
+
 topk_idx_bits = meson.get_external_property('topk_idx_bits', '32')
 nixl_ep_cpp_args += ['-DTOPK_IDX_BITS=' + topk_idx_bits]
 nixl_ep_cuda_args += ['-DTOPK_IDX_BITS=' + topk_idx_bits]

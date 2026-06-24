@@ -168,11 +168,11 @@ dispatch(void* packed_recv_x, void* packed_recv_x_scales,
 
                     // Cast into send buffer
                     vec_t int2_value;
-                    auto fp8x2_values = reinterpret_cast<__nv_fp8x2_storage_t*>(&int2_value);
+                    auto fp8x2_values = reinterpret_cast<uint16_t*>(&int2_value);
                     #pragma unroll
                     for (int j = 0; j < kNumElemsPerRead; j += 2) {
                         float2 fp32x2 = {fp32_values[j] * scale, fp32_values[j + 1] * scale};
-                        fp8x2_values[j / 2] = __nv_cvt_float2_to_fp8x2(fp32x2, __NV_SATFINITE, __NV_E4M3);
+                        fp8x2_values[j / 2] = cast_float2_to_e4m3x2(fp32x2);
                     }
                     rdma_x_vec[i] = int2_value;
                 } else {

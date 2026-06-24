@@ -57,6 +57,12 @@
 
 namespace nixl_ep {
 
+#if !defined(DISABLE_SM90_FEATURES) && defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900)
+#define NIXL_EP_HAS_SM90_DEVICE_FEATURES 1
+#else
+#define NIXL_EP_HAS_SM90_DEVICE_FEATURES 0
+#endif
+
 template <int kBytes>
 struct VecInt {};
 template<> struct VecInt<1> { using vec_t = int8_t; };
@@ -286,7 +292,7 @@ __forceinline__ __device__ int get_lane_id() {
 }
 
 __device__ __forceinline__ uint32_t elect_one_sync() {
-#ifndef DISABLE_SM90_FEATURES
+#if NIXL_EP_HAS_SM90_DEVICE_FEATURES
     uint32_t pred = 0;
     asm volatile(
       "{\n"
@@ -305,28 +311,50 @@ __device__ __forceinline__ uint32_t elect_one_sync() {
 }
 
 __device__ __forceinline__ void fence_view_async_shared() {
+#if NIXL_EP_HAS_SM90_DEVICE_FEATURES
     asm volatile("fence.proxy.async.shared::cta; \n" :: );
+#else
+    __threadfence_block();
+#endif
 }
 
 
 // TMA PTX instructions
-#ifndef DISABLE_SM90_FEATURES
 __device__ __forceinline__ void fence_barrier_init() {
+#if NIXL_EP_HAS_SM90_DEVICE_FEATURES
     asm volatile("fence.mbarrier_init.release.cluster; \n" :: );
+#else
+    __threadfence_block();
+#endif
 }
 
 __device__ __forceinline__ void mbarrier_init(uint64_t* mbar_ptr, uint32_t arrive_count) {
+#if NIXL_EP_HAS_SM90_DEVICE_FEATURES
     auto mbar_int_ptr = static_cast<uint32_t>(__cvta_generic_to_shared(mbar_ptr));
     asm volatile("mbarrier.init.shared::cta.b64 [%1], %0;" :: "r"(arrive_count), "r"(mbar_int_ptr));
+#else
+    auto state = reinterpret_cast<int*>(mbar_ptr);
+    state[0] = 0;
+    state[1] = static_cast<int>((arrive_count & 0xffffu) | 0x80000000u);
+    __threadfence_block();
+#endif
 }
 
 __device__ __forceinline__ void mbarrier_inval(uint64_t* mbar_ptr) {
+#if NIXL_EP_HAS_SM90_DEVICE_FEATURES
     auto mbar_int_ptr = static_cast<uint32_t>(__cvta_generic_to_shared(mbar_ptr));
     asm volatile("mbarrier.inval.shared::cta.b64 [%0];" :: "r"(mbar_int_ptr));
+#else
+    auto state = reinterpret_cast<int*>(mbar_ptr);
+    state[0] = 0;
+    state[1] = 0;
+    __threadfence_block();
+#endif
 }
 
 template <bool kWithMultiStages = false>
 __device__ __forceinline__ void mbarrier_wait(uint64_t* mbar_ptr, uint32_t& phase, int stage_idx = 0) {
+#if NIXL_EP_HAS_SM90_DEVICE_FEATURES
     auto mbar_int_ptr = static_cast<uint32_t>(__cvta_generic_to_shared(mbar_ptr));
     const auto& wait = kWithMultiStages ? (phase >> stage_idx) & 1 : phase;
     asm volatile("{\n\t"
@@ -338,49 +366,101 @@ __device__ __forceinline__ void mbarrier_wait(uint64_t* mbar_ptr, uint32_t& phas
                  "DONE: \n\t"
                  "}" :: "r"(mbar_int_ptr), "r"(wait), "r"(0x989680));
     phase ^= kWithMultiStages ? (1 << stage_idx) : 1;
+#else
+    auto state = reinterpret_cast<volatile int*>(mbar_ptr);
+    const auto wait = kWithMultiStages ? (phase >> stage_idx) & 1 : phase;
+    const int expected_phase = wait ? 0x80000000 : 0;
+    while ((state[1] & 0x80000000) != expected_phase)
+        ;
+    phase ^= kWithMultiStages ? (1u << stage_idx) : 1u;
+#endif
 }
 
 __device__ __forceinline__ void mbarrier_arrive_and_expect_tx(uint64_t* mbar_ptr, int num_bytes) {
+#if NIXL_EP_HAS_SM90_DEVICE_FEATURES
     auto mbar_int_ptr = static_cast<uint32_t>(__cvta_generic_to_shared(mbar_ptr));
     asm volatile("mbarrier.arrive.expect_tx.shared::cta.b64 _, [%1], %0; \n\t" :: "r"(num_bytes), "r"(mbar_int_ptr));
+#else
+    (void)num_bytes;
+    auto state = reinterpret_cast<int*>(mbar_ptr);
+    auto volatile_state = reinterpret_cast<volatile int*>(mbar_ptr);
+    const int expected_count = volatile_state[1] & 0xffff;
+    const int old_count = atomicAdd(state, 1);
+    if (old_count + 1 == expected_count) {
+        __threadfence_block();
+        state[0] = 0;
+        __threadfence_block();
+        atomicXor(state + 1, 0x80000000);
+    }
+#endif
 }
 
 __device__ __forceinline__ void mbarrier_arrive(uint64_t* mbar_ptr) {
+#if NIXL_EP_HAS_SM90_DEVICE_FEATURES
     auto mbar_int_ptr = static_cast<uint32_t>(__cvta_generic_to_shared(mbar_ptr));
     asm volatile("mbarrier.arrive.shared::cta.b64 _, [%0]; \n\t" :: "r"(mbar_int_ptr));
+#else
+    mbarrier_arrive_and_expect_tx(mbar_ptr, 0);
+#endif
 }
 
 __device__ __forceinline__ void tma_store_fence() {
+#if NIXL_EP_HAS_SM90_DEVICE_FEATURES
     asm volatile ("fence.proxy.async.shared::cta;");
+#else
+    __threadfence_block();
+#endif
 }
 
 constexpr uint64_t kEvictFirst = 0x12f0000000000000;
 constexpr uint64_t kEvictNormal = 0x1000000000000000;
 
+__device__ __forceinline__ void sync_copy_1d(void* dst_ptr, const void* src_ptr, int num_bytes) {
+    auto dst = static_cast<uint8_t*>(dst_ptr);
+    auto src = static_cast<const uint8_t*>(src_ptr);
+    #pragma unroll 1
+    for (int i = 0; i < num_bytes; ++i)
+        dst[i] = src[i];
+}
+
 __device__ __forceinline__ void tma_load_1d(const void* smem_ptr, const void* gmem_ptr, uint64_t* mbar_ptr, int num_bytes,
                                             bool evict_first = true) {
+#if NIXL_EP_HAS_SM90_DEVICE_FEATURES
     auto mbar_int_ptr = static_cast<uint32_t>(__cvta_generic_to_shared(mbar_ptr));
     auto smem_int_ptr  = static_cast<uint32_t>(__cvta_generic_to_shared(smem_ptr));
     const auto cache_hint = evict_first ? kEvictFirst : kEvictNormal;
     asm volatile("cp.async.bulk.shared::cluster.global.mbarrier::complete_tx::bytes.L2::cache_hint [%0], [%1], %2, [%3], %4;\n"
                  :: "r"(smem_int_ptr), "l"(gmem_ptr), "r"(num_bytes), "r"(mbar_int_ptr), "l"(cache_hint) : "memory");
+#else
+    (void)mbar_ptr;
+    (void)evict_first;
+    sync_copy_1d(const_cast<void*>(smem_ptr), gmem_ptr, num_bytes);
+#endif
 }
 
 __device__ __forceinline__ void tma_store_1d(const void* smem_ptr, const void* gmem_ptr, int num_bytes,
                                              bool evict_first = true) {
+#if NIXL_EP_HAS_SM90_DEVICE_FEATURES
     auto smem_int_ptr = static_cast<uint32_t>(__cvta_generic_to_shared(smem_ptr));
     const auto cache_hint = evict_first ? kEvictFirst : kEvictNormal;
     asm volatile("cp.async.bulk.global.shared::cta.bulk_group.L2::cache_hint [%0], [%1], %2, %3;\n"
                  :: "l"(gmem_ptr), "r"(smem_int_ptr), "r"(num_bytes), "l"(cache_hint) : "memory");
     asm volatile("cp.async.bulk.commit_group;");
+#else
+    (void)evict_first;
+    sync_copy_1d(const_cast<void*>(gmem_ptr), smem_ptr, num_bytes);
+#endif
 }
 
 template <int N = 0>
 __device__ __forceinline__ void tma_store_wait() {
+#if NIXL_EP_HAS_SM90_DEVICE_FEATURES
     asm volatile("cp.async.bulk.wait_group %0;" :: "n"(N) : "memory");
-}
-
+#else
+    (void)N;
+    memory_fence();
 #endif
+}
 
 template <typename dtype_t>
 __host__ __device__ constexpr dtype_t ceil_div(dtype_t a, dtype_t b) {
@@ -453,6 +533,48 @@ __forceinline__ __device__ void calculate_fp8_scales(float amax, float& scale, f
         scale_inv = amax * kFinfoAmaxInvE4M3;
         scale = kFinfoAmaxE4M3 / amax;
     }
+}
+
+__forceinline__ __device__ uint8_t cast_float_to_e4m3fn(float value) {
+    const uint32_t sign = (__float_as_uint(value) >> 24) & 0x80;
+    float abs_value = fabsf(value);
+
+    if (!(abs_value > 0.0f))
+        return static_cast<uint8_t>(sign);
+    if (abs_value >= kFinfoAmaxE4M3)
+        return static_cast<uint8_t>(sign | 0x7e);
+
+    int exponent = static_cast<int>(floorf(log2f(abs_value)));
+    int encoded_exponent = exponent + 7;
+    if (encoded_exponent <= 0) {
+        int mantissa = __float2int_rn(abs_value * 512.0f);
+        mantissa = mantissa > 7 ? 7 : mantissa;
+        return static_cast<uint8_t>(sign | mantissa);
+    }
+
+    float base = exp2f(static_cast<float>(exponent));
+    int mantissa = __float2int_rn((abs_value / base - 1.0f) * 8.0f);
+    if (mantissa == 8) {
+        mantissa = 0;
+        encoded_exponent += 1;
+    }
+    if (encoded_exponent >= 15) {
+        encoded_exponent = 15;
+        mantissa = mantissa > 6 ? 6 : mantissa;
+    }
+
+    return static_cast<uint8_t>(sign | (encoded_exponent << 3) | mantissa);
+}
+
+__forceinline__ __device__ uint16_t cast_float2_to_e4m3x2(float2 value) {
+#if NIXL_EP_HAS_SM90_DEVICE_FEATURES
+    auto fp8x2 = __nv_cvt_float2_to_fp8x2(value, __NV_SATFINITE, __NV_E4M3);
+    return *reinterpret_cast<uint16_t*>(&fp8x2);
+#else
+    const uint16_t lo = cast_float_to_e4m3fn(value.x);
+    const uint16_t hi = cast_float_to_e4m3fn(value.y);
+    return static_cast<uint16_t>(lo | (hi << 8));
+#endif
 }
 
 template <bool kIsUE8M0, typename out_dtype_t = std::conditional_t<kIsUE8M0, uint8_t, float>>
